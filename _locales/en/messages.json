@@ -1,0 +1,23 @@
+{
+  "extName": {
+    "message": "Toggle Color Theme"
+  },
+  "extDescription": {
+    "message": "Toggle dark to light with memory."
+  },
+  "actionTitleDefault": {
+    "message": "Toggle Color Theme - Click to toggle & remember"
+  },
+  "actionTitleOn": {
+    "message": "Toggle Color Theme: ON (remembered) - Click to remove"
+  },
+  "actionTitleOnChecking": {
+    "message": "Toggle Color Theme: ON - Checking..."
+  },
+  "actionTitleOnForced": {
+    "message": "Toggle Color Theme: ON (forced light) - Click to remove"
+  },
+  "actionTitleOnRemembered": {
+    "message": "Toggle Color Theme: ON (remembered)"
+  }
+}

@@ -1,0 +1,24 @@
+/* v25 - 軽量・安全版: filterで背景とテキストを補色、画像・動画は二重反転で除外 */
+html.__toggle_color_theme_active {
+  filter: invert(1) hue-rotate(180deg) !important;
+  -webkit-filter: invert(1) hue-rotate(180deg) !important;
+  background: white !important;
+}
+
+/* 画像・埋め込み動画は補色化しない = 二重反転で元に戻す */
+html.__toggle_color_theme_active img,
+html.__toggle_color_theme_active picture,
+html.__toggle_color_theme_active video,
+html.__toggle_color_theme_active iframe {
+  filter: invert(1) hue-rotate(180deg) !important;
+  -webkit-filter: invert(1) hue-rotate(180deg) !important;
+}
+
+/* role=img や旧バージョン互換 + div背景画像 */
+html.__toggle_color_theme_active [role="img"],
+html.__toggle_color_theme_active .__preserve-img,
+html.__toggle_color_theme_active .__preserve-iframe,
+html.__toggle_color_theme_active .__has-bg-img {
+  filter: invert(1) hue-rotate(180deg) !important;
+  -webkit-filter: invert(1) hue-rotate(180deg) !important;
+}

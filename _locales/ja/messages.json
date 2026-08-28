@@ -1,0 +1,23 @@
+{
+  "extName": {
+    "message": "Toggle Color Theme"
+  },
+  "extDescription": {
+    "message": "ダークとライトを補色で切り替え。記憶機能付き。"
+  },
+  "actionTitleDefault": {
+    "message": "Toggle Color Theme - クリックで記憶＆反転"
+  },
+  "actionTitleOn": {
+    "message": "Toggle Color Theme: ON (記憶済み) - クリックで解除"
+  },
+  "actionTitleOnChecking": {
+    "message": "Toggle Color Theme: ON - チェック中..."
+  },
+  "actionTitleOnForced": {
+    "message": "Toggle Color Theme: ON (強制ライト) - クリックで解除"
+  },
+  "actionTitleOnRemembered": {
+    "message": "Toggle Color Theme: ON (記憶済み)"
+  }
+}
