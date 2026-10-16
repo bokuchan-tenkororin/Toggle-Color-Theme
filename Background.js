@@ -1,10 +1,10 @@
-// v26 - div背景画像も補色化除外版
-// - filter方式、背景とテキストは自動で補色化
-// - 画像・動画・背景画像(urlを含む)を二重反転で除外
-// - MutationObserverはchildListのみ
+// v27 - パリティ管理版
+// - ページ全体(html)に1回だけ補色化し、Page.js が各要素の「反転回数の偶奇」を
+//   管理して画像・動画・背景画像が常に元の色になるよう補正する
+// - 補正ロジックは Page.js に集約（Background.js は注入とイベント管理のみ）
+// - MutationObserver は childList + attributes、10秒周期の再走査も実施
 
-const FILTER_CSS='filter.css';
-const CLASS_FILTER='__toggle_color_theme_active';
+const FILTER_CSS='Filter.css';
 
 async function getOrigin(u){ try{ return new URL(u).origin; }catch{ return u; } }
 async function getRemembered(){
@@ -28,121 +28,29 @@ async function isExtensionUrl(tabId){
 async function setBadgeON(tabId){ try{ await chrome.action.setBadgeText({tabId,text:'ON'}); await chrome.action.setBadgeBackgroundColor({tabId,color:'#111'}); }catch{} }
 async function setBadgeOFF(tabId){ try{ await chrome.action.setBadgeText({tabId,text:''}); }catch{} }
 
-async function enableFilterMode(tabId){
-  if(!tabId) return;
-  if(await isExtensionUrl(tabId)) return;
-  await safeExec(tabId, async()=>{ await chrome.scripting.insertCSS({target:{tabId}, files:[FILTER_CSS]}); });
+// ページに Page.js を読み込んでコマンドを実行する
+async function runPageScript(tabId, command){
+  await safeExec(tabId, async()=>{ await chrome.scripting.executeScript({target:{tabId}, files:['Page.js']}); });
   await safeExec(tabId, async()=>{
     await chrome.scripting.executeScript({
       target:{tabId},
-      func:(cf)=>{
-        const html=document.documentElement;
-        if(html.dataset.__toggle_enabled==='1' && html.classList.contains(cf)) return;
-        html.classList.add(cf);
-        html.dataset.__toggle_enabled='1';
-
-        const MEDIA_SEL = 'img, picture, video, iframe';
-
-        const hasBgImage = (el) => {
-          try{
-            if(!(el instanceof HTMLElement)) return false;
-            const bg = getComputedStyle(el).backgroundImage;
-            return bg && bg !== 'none' && bg.includes('url(');
-          }catch{ return false; }
-        };
-
-        const restore = (el, cls) => {
-          try{
-            if(!el || !el.style) return;
-            if(cls && el.classList.contains(cls)) return;
-            el.style.setProperty('filter','invert(1) hue-rotate(180deg)','important');
-            el.style.setProperty('-webkit-filter','invert(1) hue-rotate(180deg)','important');
-            if(cls) el.classList.add(cls);
-          }catch{}
-        };
-
-        const fixMedia = (root) => {
-          try{
-            if(root instanceof HTMLElement){
-              if(root.matches && root.matches(MEDIA_SEL)){
-                restore(root, root.tagName==='IFRAME' ? '__preserve-iframe' : '__preserve-img');
-              } else if(hasBgImage(root)){
-                restore(root, '__has-bg-img');
-              }
-            }
-            const list = root.querySelectorAll ? root.querySelectorAll(MEDIA_SEL) : [];
-            for(let i=0;i<list.length;i++){
-              restore(list[i], list[i].tagName==='IFRAME' ? '__preserve-iframe' : '__preserve-img');
-            }
-            // div背景画像も保護
-            const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
-            for(let i=0;i<all.length;i++){
-              const el = all[i];
-              if(el.matches && el.matches(MEDIA_SEL)) continue;
-              if(hasBgImage(el)){
-                restore(el, '__has-bg-img');
-              }
-            }
-          }catch{}
-        };
-
-        fixMedia(document);
-
-        if(window.__toggleObserver){ try{ window.__toggleObserver.disconnect(); }catch{} }
-        let pending=false;
-        const obs=new MutationObserver((muts)=>{
-          if(html.dataset.__toggle_enabled!=='1'){ obs.disconnect(); return; }
-          if(pending) return;
-          pending=true;
-          requestAnimationFrame(()=>{
-            pending=false;
-            if(html.dataset.__toggle_enabled!=='1') return;
-            for(const mut of muts){
-              if(mut.type==='childList'){
-                for(const node of mut.addedNodes){
-                  if(!(node instanceof HTMLElement)) continue;
-                  fixMedia(node);
-                }
-              }
-            }
-          });
-        });
-        obs.observe(document.documentElement, {childList:true, subtree:true});
-        window.__toggleObserver=obs;
-
-        window.addEventListener('pageshow', ()=>{
-          if(html.dataset.__toggle_enabled==='1') fixMedia(document);
-        });
-      },
-      args:[CLASS_FILTER]
+      func:(cmd)=>{ try{ if(window.__tct) window.__tct[cmd](); }catch{} },
+      args:[command]
     });
   });
 }
 
+async function enableFilterMode(tabId){
+  if(!tabId) return;
+  if(await isExtensionUrl(tabId)) return;
+  await safeExec(tabId, async()=>{ await chrome.scripting.insertCSS({target:{tabId}, files:[FILTER_CSS]}); });
+  await runPageScript(tabId, 'enable');
+}
+
 async function disableAll(tabId){
   if(!tabId) return;
+  await runPageScript(tabId, 'disable');
   await safeExec(tabId, async()=>{ try{ await chrome.scripting.removeCSS({target:{tabId}, files:[FILTER_CSS]}); }catch{} });
-  await safeExec(tabId, async()=>{
-    await chrome.scripting.executeScript({
-      target:{tabId},
-      func:(cf)=>{
-        const html=document.documentElement;
-        try{ if(window.__toggleObserver){ try{ window.__toggleObserver.disconnect(); }catch{} window.__toggleObserver=null; } }catch{}
-        html.dataset.__toggle_enabled='0';
-        html.classList.remove(cf);
-        try{
-          document.querySelectorAll('.__preserve-img, .__preserve-iframe, .__has-bg-img').forEach(el=>{
-            el.style.removeProperty('filter');
-            el.style.removeProperty('-webkit-filter');
-            el.classList.remove('__preserve-img');
-            el.classList.remove('__preserve-iframe');
-            el.classList.remove('__has-bg-img');
-          });
-        }catch{}
-      },
-      args:[CLASS_FILTER]
-    });
-  });
 }
 
 chrome.action.onClicked.addListener(async(tab)=>{
