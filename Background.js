@@ -31,7 +31,6 @@ async function setBadgeOFF(tabId){ try{ await chrome.action.setBadgeText({tabId,
 async function enableFilterMode(tabId){
   if(!tabId) return;
   if(await isExtensionUrl(tabId)) return;
-  await safeExec(tabId, async()=>{ try{ await chrome.scripting.removeCSS({target:{tabId}, files:['forced.css']}); }catch{} });
   await safeExec(tabId, async()=>{ await chrome.scripting.insertCSS({target:{tabId}, files:[FILTER_CSS]}); });
   await safeExec(tabId, async()=>{
     await chrome.scripting.executeScript({
@@ -122,7 +121,7 @@ async function enableFilterMode(tabId){
 
 async function disableAll(tabId){
   if(!tabId) return;
-  await safeExec(tabId, async()=>{ try{ await chrome.scripting.removeCSS({target:{tabId}, files:[FILTER_CSS,'forced.css']}); }catch{} });
+  await safeExec(tabId, async()=>{ try{ await chrome.scripting.removeCSS({target:{tabId}, files:[FILTER_CSS]}); }catch{} });
   await safeExec(tabId, async()=>{
     await chrome.scripting.executeScript({
       target:{tabId},
@@ -169,12 +168,8 @@ async function autoApply(tabId,url){
     if(url.startsWith('chrome://')||url.startsWith('edge://')||url.startsWith('about:')||url.startsWith('chrome-extension://')) return;
     const origin=await getOrigin(url);
     const remembered=await getRemembered();
-    let mode=remembered[origin];
-    if(!mode){
-      const k=Object.keys(remembered).find(k=>url.startsWith(k));
-      if(!k){ await setBadgeOFF(tabId); return; }
-      mode=remembered[k];
-    }
+    const enabled = !!remembered[origin] || Object.keys(remembered).some(k=>url.startsWith(k));
+    if(!enabled){ await setBadgeOFF(tabId); return; }
     await enableFilterMode(tabId);
     await setBadgeON(tabId);
   }catch{}
@@ -187,7 +182,4 @@ chrome.tabs.onActivated?.addListener(async (activeInfo)=>{
 });
 chrome.runtime.onStartup?.addListener(async ()=>{
   try{ const tabs = await chrome.tabs.query({}); for(const t of tabs){ if(t.id && t.url) autoApply(t.id, t.url); } }catch{}
-});
-
-chrome.runtime.onInstalled.addListener(async()=>{
 });
