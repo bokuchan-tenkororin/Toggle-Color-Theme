@@ -1,4 +1,4 @@
-// Toggle Color Theme - ページ内スクリプト (v27 / パリティ管理版)
+// Toggle Color Theme - ページ内スクリプト (v28 / パリティ管理版)
 //
 // 原理: html に invert(1) hue-rotate(180deg) を1回適用してページ全体を補色化する。
 //        その上で各要素に「必要な反転回数の偶奇」を保証する。
@@ -12,7 +12,7 @@
 // 要素自身へ filter を付けずに済み、子孫の偶奇もレイアウトも壊れない。
 (() => {
   'use strict';
-  const VERSION = 27;
+  const VERSION = 28;
   if (window.__tct && window.__tct.version === VERSION) return; // 二重読込防止
   if (window.__tct) { try { window.__tct.disable(); } catch (e) {} }
 
@@ -22,6 +22,8 @@
   const MARK = 'data-tct-f';                   // 拡張が counter-filter を適用した要素
   const MARK_PSEUDO = 'data-tct-pseudo';       // 擬似要素を補正する要素
   const MARK_LAYER = 'data-tct-layer';         // 背景を擬似要素へ移した要素 ("before"|"after")
+  const LAYER_VAR = '--tct-bg';                // レイヤー元の背景画像（擬似側が参照する。継承は不可:
+                                               // 親は CSS で background-image:none になっているため）
   const SHADOW_STYLE_ID = '__tct_shadow_css';
   const LEGACY = ['__preserve-img', '__preserve-iframe', '__has-bg-img'];
   const MEDIA_SEL = 'img, video, canvas, svg, object, embed, iframe, input[type="image"]';
@@ -74,11 +76,40 @@
     return n;
   };
   const isMedia = el => { try { return el.matches(MEDIA_SEL); } catch (e) { return false; } };
-  const bgUrl = el => {
+  // 背景画像の「値」を読む（url のあるものだけ対象。グラデーション等はテーマ色として扱う）
+  const readBgImage = el => {
     try {
       const v = getComputedStyle(el).backgroundImage;
-      return !!v && v !== 'none' && v.includes('url(');
+      return (v && v !== 'none' && v.includes('url(')) ? v : null;
+    } catch (e) { return null; }
+  };
+  const bgUrl = el => !!readBgImage(el);
+  // レイヤー適用中は自前の CSS で background-image:none にされているため、
+  // マーカーを一時的に外してサイト本来の背景画像を読む。
+  // 同一タスク内で戻すため描画には現れない（変更・削除にも追従できる）。
+  const liveBgImage = el => {
+    if (!el || !el.getAttribute) return null;
+    const side = el.getAttribute(MARK_LAYER);
+    try { el.removeAttribute(MARK_LAYER); } catch (e) {}
+    try { return readBgImage(el); } catch (e) { return null; }
+    finally { try { if (side !== null) el.setAttribute(MARK_LAYER, side); } catch (e) {} }
+  };
+  // --tct-bg をインラインで書ける要素かを確認しつつ設定する。
+  // 同値なら書かない（'style' は監視対象であり、毎回書くと自己誘発の走査ループになる）。
+  const writeLayerVar = (el, v) => {
+    try {
+      const s = el.style;
+      if (!s || typeof s.setProperty !== 'function') return false; // style が CSSStyleDeclaration でない要素
+      if (norm(s.getPropertyValue(LAYER_VAR)) === norm(v)) return true;
+      s.setProperty(LAYER_VAR, v, 'important');
+      return true;
     } catch (e) { return false; }
+  };
+  const clearLayerVar = el => {
+    try {
+      const s = el.style;
+      if (s && typeof s.removeProperty === 'function') s.removeProperty(LAYER_VAR);
+    } catch (e) {}
   };
   const pseudoHasImage = (el, p) => {
     try {
@@ -169,19 +200,29 @@
     if (!el || el.nodeType !== 1 || SKIP_TAGS.indexOf(el.tagName) >= 0) return;
     if (el === document.documentElement) { for (const c of el.children) reconcile(c, chainParity(el)); return; }
 
-    // 注意: レイヤー適用中は自分の CSS で background-image:none になっているため、
-    // getComputedStyle では bg が「無かった」ように見える。そこでレイヤーの
-    // マーカーがある場合は bg ありと信任し、自己誘発の剥がれ(振動)を防ぐ。
-    const hasBg = bgUrl(el) || hasMark(el, MARK_LAYER);
+    // レイヤー適用中は自前 CSS で背景が消えているため、サイト本来の背景画像を
+    // peek して持つ（無い＝サイトが削除した、としてレイヤーを解除できる）。
+    const marked = hasMark(el, MARK_LAYER);
+    const siteBg = marked ? liveBgImage(el) : readBgImage(el);
+    const hasBg = !!siteBg;
     // 背景画像を持つ子孫あり要素 → 擬似レイヤーを優先（自身には filter を付けない）
     let asLayer = false;
     if (hasBg && layerOK(el)) {
-      // position:relative は Filter.css / Shadow 用スタイルが !important で適用する
-      // (サイトがインライン style を書き換えても剥がれないようにするため)
-      if (!hasMark(el, MARK_LAYER)) setMark(el, MARK_LAYER, pseudoFree(el, '::before') ? 'before' : 'after');
-      asLayer = true;
-    } else if (hasMark(el, MARK_LAYER)) {
+      // 擬似側は継承では「消去済み」の値しか受け取れないため、
+      // --tct-bg に原本を保持して擬似側に表示させる。
+      // 書けない要素はレイヤーにせず、通常の filter 補正へフォールバックする。
+      const side = marked ? el.getAttribute(MARK_LAYER)
+        : (pseudoFree(el, '::before') ? 'before' : 'after');
+      if (writeLayerVar(el, siteBg)) {
+        if (!marked) setMark(el, MARK_LAYER, side);
+        asLayer = true;
+      } else {
+        setMark(el, MARK_LAYER, null);
+        clearLayerVar(el);
+      }
+    } else if (marked) {
       setMark(el, MARK_LAYER, null);
+      clearLayerVar(el);
     }
 
     // 必要な偶奇 (0=偶数=保護対象 / 1=奇数=テーマ反転)
@@ -213,7 +254,7 @@
         layerRule('[' + MARK_LAYER + ']') +
         '[' + MARK_LAYER + '="before"]::before,[' + MARK_LAYER + '="after"]::after{' +
         'content:\'\' !important;position:absolute !important;inset:0 !important;z-index:-1 !important;pointer-events:none !important;' +
-        'background-image:inherit !important;background-size:inherit !important;background-position:inherit !important;' +
+        'background-image:var(' + LAYER_VAR + ', inherit) !important;background-size:inherit !important;background-position:inherit !important;' +
         'background-position-x:inherit !important;background-position-y:inherit !important;background-repeat:inherit !important;' +
         'background-origin:inherit !important;background-clip:inherit !important;background-attachment:inherit !important;' +
         'background-blend-mode:inherit !important;' +
@@ -367,7 +408,8 @@
         if (wantEven) { if (res.mediaBad.length < 8) res.mediaBad.push(el.tagName.toLowerCase() + '#' + String(el.id || '') + '.' + String(el.className).slice(0, 40)); }
         else res.normalBad++;
       }
-      if (parity === 1 && !hasMark(el, MARK_PSEUDO)) {
+      // レイヤー要素の擬似はレイヤールール側で補正済みなので対象外
+      if (parity === 1 && !hasMark(el, MARK_PSEUDO) && !hasMark(el, MARK_LAYER)) {
         try { if (pseudoHasImage(el, '::before') || pseudoHasImage(el, '::after')) res.pseudoBad++; } catch (e) {}
       }
       const kids = el.children;
@@ -387,6 +429,7 @@
       if (hasOurFilter(el)) removeFilter(el);
       setMark(el, MARK_PSEUDO, null);
       setMark(el, MARK_LAYER, null);
+      clearLayerVar(el);
       for (const c of LEGACY) el.classList.remove(c);
     }
     try { root.querySelectorAll('style#' + SHADOW_STYLE_ID).forEach(s => s.remove()); } catch (e) {}

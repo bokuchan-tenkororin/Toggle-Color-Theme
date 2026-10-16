@@ -1,4 +1,4 @@
-/* Toggle Color Theme (v27 / パリティ管理版)
+/* Toggle Color Theme (v28 / パリティ管理版)
  *
  * ページ全体(html)に1回だけ補色化をかける。
  * 画像等の二重反転は Page.js が要素ごとの偶奇を計算して data 属性の
@@ -33,8 +33,10 @@ html[data-tct-on] [data-tct-pseudo]::after {
 
 /* 背景画像を持つ「子孫を持つ要素」は、背景を擬似要素レイヤーへ移して
    要素自身の filter を回避する（子・レイアウトへの影響を防ぐ）。
-   position:relative も CSS 側で !important により固定し、
-   サイト側のインライン style 書き換えで剥がれないようにする。 */
+   ・親の background-image は消すが、擬似側は継承(inherit)では「消えた値」しか
+     受け取れないため、Page.js が --tct-bg に原本を保持して擬似側に表示する。
+   ・position:relative も CSS 側で !important により固定し、
+     サイト側のインライン style 書き換えで剥がれないようにする。 */
 html[data-tct-on] [data-tct-layer] {
   background-image: none !important;
   isolation: isolate !important;
@@ -47,7 +49,7 @@ html[data-tct-on] [data-tct-layer="after"]::after {
   inset: 0 !important;
   z-index: -1 !important;
   pointer-events: none !important;
-  background-image: inherit !important;
+  background-image: var(--tct-bg, inherit) !important;
   background-size: inherit !important;
   background-position: inherit !important;
   background-position-x: inherit !important;
