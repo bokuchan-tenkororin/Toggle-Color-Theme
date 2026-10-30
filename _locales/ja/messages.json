@@ -7,5 +7,80 @@
   },
   "actionTitleDefault": {
     "message": "Toggle Color Theme - クリックで記憶＆反転"
+  },
+  "optPageTitle": {
+    "message": "Toggle Color Theme - オプション"
+  },
+  "optIntro": {
+    "message": "オプションの設定一式は、選択したブックマークフォルダの中に「疑似ブックマーク」として保存されます。ウェブページを開くためのブックマークではなく、あくまで設定を保存するためのものです。Chrome の起動時には、保存フォルダから設定が読み込まれます。"
+  },
+  "optFolderHeading": {
+    "message": "疑似ブックマークの保存フォルダ"
+  },
+  "optFolderHint": {
+    "message": "設定を保存するブックマークフォルダを選択してください。フォルダを変更してオプション画面を閉じると、変更前のフォルダから疑似ブックマークが削除され、変更後のフォルダに保存されます。"
+  },
+  "optFolderSelectLabel": {
+    "message": "疑似ブックマークの保存フォルダ"
+  },
+  "optFolderReload": {
+    "message": "再読み込み"
+  },
+  "optFolderNone": {
+    "message": "（保存フォルダ未選択）"
+  },
+  "optFolderMissingLabel": {
+    "message": "（見つかりません）"
+  },
+  "optFolderMissing": {
+    "message": "保存済みの保存フォルダが見つかりません。別のフォルダを選択してください。"
+  },
+  "optFolderLoadFailed": {
+    "message": "ブックマークフォルダの一覧を読み込めませんでした。"
+  },
+  "optSitesHeading": {
+    "message": "ON したウェブサイト"
+  },
+  "optSitesHint": {
+    "message": "ツールバーのアイコンで「ON」にしたウェブサイトの一覧です。URL を入力して「追加」で新規登録、「削除」で個別に解除できます。判定は URL のオリジン（プロトコル＋ホスト＋ポート）単位で行われます。"
+  },
+  "optSitePlaceholder": {
+    "message": "https://example.com"
+  },
+  "optAdd": {
+    "message": "追加"
+  },
+  "optDelete": {
+    "message": "削除"
+  },
+  "optNoSites": {
+    "message": "登録されているウェブサイトはありません。"
+  },
+  "optInvalidUrl": {
+    "message": "URL が正しくありません。"
+  },
+  "optDuplicate": {
+    "message": "このサイトは登録済みです。"
+  },
+  "optSaving": {
+    "message": "保存中..."
+  },
+  "optLoaded": {
+    "message": "保存フォルダから設定を読み込みました。"
+  },
+  "optSaved": {
+    "message": "保存フォルダの疑似ブックマークとして保存しました。"
+  },
+  "optSavedNoFolder": {
+    "message": "保存フォルダが未選択のため、拡張機能のストレージに保存しています。フォルダを選択すると疑似ブックマークとして保存されます。"
+  },
+  "optDirty": {
+    "message": "未保存の変更があります（自動で保存します。画面を閉じると保存します）。"
+  },
+  "optSaveFailed": {
+    "message": "保存に失敗しました："
+  },
+  "optSaveNow": {
+    "message": "今すぐ保存"
   }
 }

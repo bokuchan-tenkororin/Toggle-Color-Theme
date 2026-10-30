@@ -7,6 +7,36 @@
 //   （旧実装の文字列プレフィックス一致は https://gemini.google で ON にすると
 //     https://gemini.google.com まで有効扱きになり、オフに戻せなくなる原因だった）
 
+// ---- 設定（疑似ブックマーク）の読み書き ------------------------------------
+importScripts('Settings.js');
+
+// Chrome の起動時などに、保存フォルダから疑似ブックマークを読み込んで設定へ反映する。
+// 1つの Service Worker 起動につき1度だけ実行される（結果は後続の処理でも再利用する）。
+let tctSettingsReady=null;
+function tctEnsureSettings(){
+  if(!tctSettingsReady){
+    tctSettingsReady=(async()=>{
+      try{
+        const fromFolder=await tctLoadSettingsFromBookmarks();
+        if(fromFolder){ await tctPutStoredSettings(fromFolder); return fromFolder; }
+      }catch(e){ console.warn('TCT: failed to load settings from bookmark folder', e); }
+      return await tctGetStoredSettings();
+    })();
+  }
+  return tctSettingsReady;
+}
+
+// 疑似ブックマークへの書き込みは1件ずつ順番に実行する（作成/削除の競合防止）。
+// tctQueuePersist は設定オブジェクトを渡す Promise を受け取る。
+let tctPersistQueue=Promise.resolve();
+function tctQueuePersist(settingsPromise){
+  const run=tctPersistQueue.then(async()=>tctSaveSettingsToBookmarks(await settingsPromise));
+  tctPersistQueue=run.then(()=>{},()=>{});
+  run.then(s=>{ tctSettingsReady=Promise.resolve(s); },()=>{});
+  return run;
+}
+function tctQueuePersistCurrent(){ return tctQueuePersist(tctGetStoredSettings()); }
+
 const FILTER_CSS='Filter.css';
 
 // URL → オリジン文字列（URL として解析できない場合は入力をそのまま返す）
@@ -27,9 +57,28 @@ async function getRemembered(){
     return r;
   }catch{ return {}; }
 }
-async function saveRemembered(o,m){ try{ const s=await getRemembered(); s[o]=m; await chrome.storage.local.set({rememberedSites:s}); }catch{} }
+async function saveRemembered(o,m){
+  try{
+    const s=await getRemembered(); s[o]=m;
+    await chrome.storage.local.set({rememberedSites:s});
+    // ON したウェブサイトは、保存フォルダの疑似ブックマークとしても保存する
+    await tctSyncStoredSites(Object.keys(s));
+    await tctQueuePersistCurrent();
+  }catch{}
+}
 // 指定オリジンに紐づく記憶をすべて削除する（同一オリジン分は必ず消す）
-async function removeRemembered(origin){ try{ const s=await getRemembered(); let c=false; for(const k of Object.keys(s)) if(originOf(k)===origin){ delete s[k]; c=true; } if(c) await chrome.storage.local.set({rememberedSites:s}); }catch{} }
+async function removeRemembered(origin){
+  try{
+    const s=await getRemembered(); let c=false;
+    for(const k of Object.keys(s)) if(originOf(k)===origin){ delete s[k]; c=true; }
+    if(c){
+      await chrome.storage.local.set({rememberedSites:s});
+      // 削除したサイトの疑似ブックマークも保存フォルダから削除する
+      await tctSyncStoredSites(Object.keys(s));
+      await tctQueuePersistCurrent();
+    }
+  }catch{}
+}
 // ページ上でフィルタが実際に有効かを返す。true=反転中 / false=無効 / null=読み取れなかった
 async function readPageState(tabId){
   try{
@@ -79,6 +128,7 @@ async function disableAll(tabId){
 chrome.action.onClicked.addListener(async(tab)=>{
   try{
     if(!tab?.id||!tab?.url) return;
+    await tctEnsureSettings(); // 保存フォルダから設定を読み込んでおく
     if(tab.url.startsWith('chrome://')||tab.url.startsWith('edge://')||tab.url.startsWith('about:')||tab.url.startsWith('chrome-extension://')) return;
     const origin=originOf(tab.url);
     const remembered=await getRemembered();
@@ -103,6 +153,7 @@ chrome.action.onClicked.addListener(async(tab)=>{
 async function autoApply(tabId,url){
   try{
     if(!tabId||!url) return;
+    await tctEnsureSettings(); // 保存フォルダから設定を読み込んでおく
     if(url.startsWith('chrome://')||url.startsWith('edge://')||url.startsWith('about:')||url.startsWith('chrome-extension://')) return;
     const origin=originOf(url);
     const remembered=await getRemembered();
@@ -130,5 +181,33 @@ chrome.tabs.onActivated?.addListener(async (activeInfo)=>{
   try{ const tab = await chrome.tabs.get(activeInfo.tabId); if(tab?.url) autoApply(activeInfo.tabId, tab.url).catch(()=>{}); }catch{}
 });
 chrome.runtime.onStartup?.addListener(async ()=>{
-  try{ const tabs = await chrome.tabs.query({}); for(const t of tabs){ if(t.id && t.url) autoApply(t.id, t.url); } }catch{}
+  try{
+    // Chrome の起動時: 保存フォルダから疑似ブックマークを読み込んで設定する
+    await tctEnsureSettings();
+    const tabs = await chrome.tabs.query({}); for(const t of tabs){ if(t.id && t.url) autoApply(t.id, t.url); } }catch{}
+});
+
+// インストール/更新直後にも設定を読み込んでおく（オプション画面の初期表示用）
+chrome.runtime.onInstalled?.addListener(()=>{ try{ tctEnsureSettings(); }catch{} });
+
+// オプション画面からの保存・取得要求
+chrome.runtime.onMessage?.addListener((msg,_sender,sendResponse)=>{
+  try{
+    if(!msg||typeof msg!=='object') return false;
+    if(msg.type===TCT_SAVE_MESSAGE){
+      tctQueuePersist(Promise.resolve(msg.settings)).then(
+        s=>{ try{ sendResponse({ok:true, settings:s}); }catch{} },
+        e=>{ try{ sendResponse({ok:false, error:String((e&&e.message)||e)}); }catch{} }
+      );
+      return true; // 非同期で応答する
+    }
+    if(msg.type===TCT_GET_MESSAGE){
+      tctEnsureSettings().then(
+        s=>{ try{ sendResponse({ok:true, settings:s}); }catch{} },
+        e=>{ try{ sendResponse({ok:false, error:String((e&&e.message)||e)}); }catch{} }
+      );
+      return true;
+    }
+  }catch(e){ console.warn(e); }
+  return false;
 });

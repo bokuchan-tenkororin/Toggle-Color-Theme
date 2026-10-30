@@ -7,5 +7,80 @@
   },
   "actionTitleDefault": {
     "message": "Toggle Color Theme - Click to toggle & remember"
+  },
+  "optPageTitle": {
+    "message": "Toggle Color Theme - Options"
+  },
+  "optIntro": {
+    "message": "All option settings are stored as pseudo-bookmarks inside the bookmark folder you select. They are not bookmarks for opening web pages; they only store settings. When Chrome starts, the settings are loaded from that folder."
+  },
+  "optFolderHeading": {
+    "message": "Folder for pseudo-bookmarks"
+  },
+  "optFolderHint": {
+    "message": "Select the bookmark folder used to store settings. When you change the folder and close the options page, the pseudo-bookmarks are deleted from the previous folder and saved to the new one."
+  },
+  "optFolderSelectLabel": {
+    "message": "Folder for pseudo-bookmarks"
+  },
+  "optFolderReload": {
+    "message": "Reload"
+  },
+  "optFolderNone": {
+    "message": "(no folder selected)"
+  },
+  "optFolderMissingLabel": {
+    "message": "(not found)"
+  },
+  "optFolderMissing": {
+    "message": "The saved folder was not found. Please select another folder."
+  },
+  "optFolderLoadFailed": {
+    "message": "Could not read the list of bookmark folders."
+  },
+  "optSitesHeading": {
+    "message": "Websites set to ON"
+  },
+  "optSitesHint": {
+    "message": "Websites turned ON with the toolbar icon. Enter a URL and press Add to register a new site, or press Delete to remove one. Matching is done per URL origin (protocol + host + port)."
+  },
+  "optSitePlaceholder": {
+    "message": "https://example.com"
+  },
+  "optAdd": {
+    "message": "Add"
+  },
+  "optDelete": {
+    "message": "Delete"
+  },
+  "optNoSites": {
+    "message": "No websites are registered."
+  },
+  "optInvalidUrl": {
+    "message": "The URL is invalid."
+  },
+  "optDuplicate": {
+    "message": "This site is already registered."
+  },
+  "optSaving": {
+    "message": "Saving..."
+  },
+  "optLoaded": {
+    "message": "Settings loaded from the save folder."
+  },
+  "optSaved": {
+    "message": "Saved as pseudo-bookmarks in the save folder."
+  },
+  "optSavedNoFolder": {
+    "message": "No folder selected, so it is saved in extension storage. Select a folder to save the settings as pseudo-bookmarks."
+  },
+  "optDirty": {
+    "message": "Unsaved changes (saved automatically, and when this page is closed)."
+  },
+  "optSaveFailed": {
+    "message": "Save failed:"
+  },
+  "optSaveNow": {
+    "message": "Save now"
   }
 }

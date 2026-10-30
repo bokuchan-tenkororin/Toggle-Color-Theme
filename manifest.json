@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "bookmarks"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -28,5 +29,9 @@
   },
   "background": {
     "service_worker": "Background.js"
+  },
+  "options_ui": {
+    "page": "Options.html",
+    "open_in_tab": true
   }
 }

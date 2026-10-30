@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toggle Color Theme - オプション</title>
+<link rel="stylesheet" href="Options.css">
+</head>
+<body>
+<main>
+  <h1 data-i18n="optPageTitle">Toggle Color Theme - オプション</h1>
+  <p class="intro" data-i18n="optIntro"></p>
+
+  <section>
+    <h2 data-i18n="optFolderHeading">疑似ブックマークの保存フォルダ</h2>
+    <p class="hint" data-i18n="optFolderHint"></p>
+    <div class="row">
+      <select id="folderSelect" data-i18n-aria-label="optFolderSelectLabel"></select>
+      <button type="button" id="folderReload" data-i18n="optFolderReload">再読み込み</button>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="optSitesHeading">ON したウェブサイト</h2>
+    <p class="hint" data-i18n="optSitesHint"></p>
+    <div class="row">
+      <input type="text" id="siteInput" data-i18n-placeholder="optSitePlaceholder"
+             spellcheck="false" autocomplete="off" autocapitalize="off">
+      <button type="button" id="addSite" data-i18n="optAdd">追加</button>
+    </div>
+    <ul id="siteList" class="site-list"></ul>
+    <p id="emptySites" class="hint" data-i18n="optNoSites"></p>
+  </section>
+
+  <div class="footer">
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <button type="button" id="saveNow" class="primary" data-i18n="optSaveNow">今すぐ保存</button>
+  </div>
+</main>
+<script src="Settings.js"></script>
+<script src="Options.js"></script>
+</body>
+</html>
