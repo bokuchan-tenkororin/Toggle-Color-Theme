@@ -12,15 +12,25 @@ importScripts('Settings.js');
 
 // Chrome の起動時などに、保存フォルダから疑似ブックマークを読み込んで設定へ反映する。
 // 1つの Service Worker 起動につき1度だけ実行される（結果は後続の処理でも再利用する）。
+// force に true を渡すとメモ化を破棄して読み込み直す（オプション画面の保存前確認用）。
 let tctSettingsReady=null;
-function tctEnsureSettings(){
+function tctEnsureSettings(force){
+  if(force) tctSettingsReady=null;
   if(!tctSettingsReady){
     tctSettingsReady=(async()=>{
+      // 正本の読み込みより前に storage の現在値を控えておく（統合用）
+      const stored=await tctGetStoredSettings();
       try{
         const fromFolder=await tctLoadSettingsFromBookmarks();
-        if(fromFolder){ await tctPutStoredSettings(fromFolder); return fromFolder; }
+        if(fromFolder){
+          // ブックマーク正本と storage を和集合で統合する。
+          // ブックマークへの書き込みが失敗・中断した分の ON 記憶を
+          // 読み込み直しで上書きして失わないようにするため。
+          const merged=tctMergeSitesWithStored(fromFolder,stored);
+          await tctPutStoredSettings(merged); return merged;
+        }
       }catch(e){ console.warn('TCT: failed to load settings from bookmark folder', e); }
-      return await tctGetStoredSettings();
+      return stored;
     })();
   }
   return tctSettingsReady;
@@ -49,35 +59,36 @@ function matchedRememberedKey(origin, remembered){
   for(const k of Object.keys(remembered)) if(originOf(k)===origin) return k;
   return null;
 }
+// 記憶の読み取り（判定用）。読み取れなければ空として扱う。
 async function getRemembered(){
-  try{
-    const d=await chrome.storage.local.get(['rememberedSites']);
-    let r=d.rememberedSites; if(!r) return {};
-    if(Array.isArray(r)){ const o={}; r.forEach(x=>o[x]='filter'); await chrome.storage.local.set({rememberedSites:o}); return o; }
-    return r;
-  }catch{ return {}; }
+  try{ return await getReadableRemembered(); }
+  catch{ return {}; }
+}
+// 記憶の読み取り（保存用）。読み取りに失敗したら例外を送出する。
+// ここで空オブジェクトにフォールバックすると、保存のたびに他サイトの記憶を
+// 全部消してしまえるため、失敗は必ず呼び出し側へ伝える。
+async function getReadableRemembered(){
+  const d=await chrome.storage.local.get(['rememberedSites']);
+  let r=d.rememberedSites; if(!r) return {};
+  if(Array.isArray(r)){ const o={}; r.forEach(x=>o[x]='filter'); return o; }
+  return r;
 }
 async function saveRemembered(o,m){
-  try{
-    const s=await getRemembered(); s[o]=m;
-    await chrome.storage.local.set({rememberedSites:s});
-    // ON したウェブサイトは、保存フォルダの疑似ブックマークとしても保存する
-    await tctSyncStoredSites(Object.keys(s));
-    await tctQueuePersistCurrent();
-  }catch{}
+  const s=await getReadableRemembered(); s[o]=m;
+  await chrome.storage.local.set({rememberedSites:s});
+  // ON したウェブサイトは、保存フォルダの疑似ブックマークとしても保存する
+  await tctSyncStoredSites(Object.keys(s));
+  await tctQueuePersistCurrent();
 }
 // 指定オリジンに紐づく記憶をすべて削除する（同一オリジン分は必ず消す）
 async function removeRemembered(origin){
-  try{
-    const s=await getRemembered(); let c=false;
-    for(const k of Object.keys(s)) if(originOf(k)===origin){ delete s[k]; c=true; }
-    if(c){
-      await chrome.storage.local.set({rememberedSites:s});
-      // 削除したサイトの疑似ブックマークも保存フォルダから削除する
-      await tctSyncStoredSites(Object.keys(s));
-      await tctQueuePersistCurrent();
-    }
-  }catch{}
+  const s=await getReadableRemembered(); let c=false;
+  for(const k of Object.keys(s)) if(originOf(k)===origin){ delete s[k]; c=true; }
+  if(!c) return;
+  await chrome.storage.local.set({rememberedSites:s});
+  // 削除したサイトの疑似ブックマークも保存フォルダから削除する
+  await tctSyncStoredSites(Object.keys(s));
+  await tctQueuePersistCurrent();
 }
 // ページ上でフィルタが実際に有効かを返す。true=反転中 / false=無効 / null=読み取れなかった
 async function readPageState(tabId){
@@ -140,11 +151,17 @@ chrome.action.onClicked.addListener(async(tab)=>{
     // どちらも無ければ「未記憶=オフ状態」なので従来どおりオンにする。
     const onPage=await readPageState(tab.id);
     if(onPage===true||key){
-      await disableAll(tab.id); await removeRemembered(origin);
+      await disableAll(tab.id);
+      try{ await removeRemembered(origin); }
+      catch(e){ console.error('TCT: failed to forget site:', origin, e); }
       await setBadgeOFF(tab.id);
     }else{
       await enableFilterMode(tab.id);
-      await saveRemembered(origin,'filter');
+      // 保存に失敗してもページの反転とバッジは ON のままにする。
+      // 失敗は無言にせず必ずログへ出さないと、
+      // 「ON したのに一覧に入らない」症状の原因を追えなくなるため。
+      try{ await saveRemembered(origin,'filter'); }
+      catch(e){ console.error('TCT: failed to remember site:', origin, e); }
       await setBadgeON(tab.id);
     }
   }catch{}
@@ -195,14 +212,31 @@ chrome.runtime.onMessage?.addListener((msg,_sender,sendResponse)=>{
   try{
     if(!msg||typeof msg!=='object') return false;
     if(msg.type===TCT_SAVE_MESSAGE){
-      tctQueuePersist(Promise.resolve(msg.settings)).then(
+      // オプション画面からの保存は、差分(追加/削除したサイト)だけを最新の設定へ適用する。
+      // 画面を開いている間にツールバーで ON/OFF したサイトを、
+      // 開いた時点の古いスナップショットで上書きして失わないようにするため。
+      const applyDiff=async()=>{
+        const settings=msg.settings||{};
+        const diff=msg.siteDiff;
+        if(!diff) return settings; // 差分が無ければ従来どおり
+        const latest=await tctEnsureSettings(true); // 保存フォルダから読み直す
+        const latestSites=Array.isArray(latest&&latest.sites)?latest.sites:[];
+        const added=Array.isArray(diff.added)?diff.added:[];
+        const removed=Array.isArray(diff.removed)?diff.removed:[];
+        const sites=[...new Set([...latestSites,...added])].filter(s=>!removed.includes(s));
+        return Object.assign({},settings,{sites});
+      };
+      applyDiff()
+        .then(merged=>tctQueuePersist(Promise.resolve(merged))).then(
         s=>{ try{ sendResponse({ok:true, settings:s}); }catch{} },
         e=>{ try{ sendResponse({ok:false, error:String((e&&e.message)||e)}); }catch{} }
       );
       return true; // 非同期で応答する
     }
     if(msg.type===TCT_GET_MESSAGE){
-      tctEnsureSettings().then(
+      // reload:true で渡された場合はメモ化を破棄して保存フォルダから読み直す
+      //（オプション画面の保存前に、ツールバー操作による最新の一覧を取得するため）
+      tctEnsureSettings(!!msg.reload).then(
         s=>{ try{ sendResponse({ok:true, settings:s}); }catch{} },
         e=>{ try{ sendResponse({ok:false, error:String((e&&e.message)||e)}); }catch{} }
       );

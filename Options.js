@@ -9,6 +9,7 @@
 // この画面自身が保存する。
 
 let tctSettings = null;        // 編集中の設定
+let tctInitialSites = [];      // 読み込み時点の一覧（画面での追加/削除の差分計算用）
 let tctStoredFolderId = null;  // 読み込み時点（＝保存済み）の保存フォルダ
 let tctFolderMissing = false;  // 保存済みフォルダが見つからない
 let tctFolderListFailed = false; // フォルダ一覧を取得できなかった
@@ -154,9 +155,22 @@ function tctMarkDirty(){
   tctSaveTimer = setTimeout(()=>{ tctDoSave(); }, 200);
 }
 
-async function tctSendSave(settings){
+// この画面での変更分（追加/削除したサイト）を差分として取り出す。
+// 保存時に Background が最新の一覧へこの差分だけを適用するため。
+// 画面を開いている間にツールバーで ON/OFF したサイトを、
+// 開いた時点の古いスナップショットで上書きして消えないようにする。
+function tctSiteDiff(snapshot){
+  const cur = Array.isArray(snapshot.sites) ? snapshot.sites : [];
+  const base = Array.isArray(tctInitialSites) ? tctInitialSites : [];
+  return {
+    added:   cur.filter(s => !base.includes(s)),
+    removed: base.filter(s => !cur.includes(s))
+  };
+}
+
+async function tctSendSave(settings, diff){
   let res = null;
-  try{ res = await chrome.runtime.sendMessage({ type: TCT_SAVE_MESSAGE, settings }); }
+  try{ res = await chrome.runtime.sendMessage({ type: TCT_SAVE_MESSAGE, settings, siteDiff: diff || null }); }
   catch(e){ res = null; }
   if(res && res.ok) return res.settings;
   if(res && res.ok === false) throw new Error(res.error || 'unknown error');
@@ -172,8 +186,10 @@ async function tctDoSave(){
   tctDirty = false;
   tctSetStatus('saving');
   try{
-    const saved = await tctSendSave(tctSettings);
+    const saved = await tctSendSave(tctSettings, tctSiteDiff(tctSettings));
     tctStoredFolderId = (saved && saved.storageFolderId) || null;
+    // 保存に成功した時点で、保存後の状態を差分計算の基準として記録する
+    if(saved && Array.isArray(saved.sites)) tctInitialSites = saved.sites.slice();
     tctSetStatus(tctStoredFolderId ? 'saved' : 'saved-nofolder');
   }catch(e){
     tctDirty = true; // 未保存のまま残す（閉じるときにもう一度試みる）
@@ -194,18 +210,20 @@ function tctFlush(){
   if(!tctSettings || (!tctDirty && !tctSaving)) return;
   clearTimeout(tctSaveTimer);
   const snapshot = tctSettings;
+  const diff = tctSiteDiff(snapshot);
   tctDirty = false;
   tctSetStatus('saving');
 
   const onOk = saved=>{
     if(saved && saved.storageFolderId) tctStoredFolderId = saved.storageFolderId;
+    if(saved && Array.isArray(saved.sites)) tctInitialSites = saved.sites.slice();
     tctSetStatus(tctStoredFolderId ? 'saved' : 'saved-nofolder');
   };
   const onFail = ()=>{ tctDirty = true; tctSetStatus('error', ''); };
   const direct = ()=>{ tctSaveSettingsToBookmarks(snapshot).then(onOk).catch(onFail); };
 
   try{
-    const p = chrome.runtime.sendMessage({ type: TCT_SAVE_MESSAGE, settings: snapshot });
+    const p = chrome.runtime.sendMessage({ type: TCT_SAVE_MESSAGE, settings: snapshot, siteDiff: diff });
     if(p && typeof p.then === 'function'){
       p.then(res=>{
         if(res && res.ok) onOk(res.settings);
@@ -229,6 +247,7 @@ async function tctInit(){
   try{ tctSettings = await tctLoadSettings(); }
   catch(e){ console.warn(e); tctSettings = await tctGetStoredSettings(); }
   tctSettings.sites = Array.isArray(tctSettings.sites) ? tctSettings.sites : [];
+  tctInitialSites = tctSettings.sites.slice();
   tctStoredFolderId = tctSettings.storageFolderId;
 
   await tctRenderFolders();

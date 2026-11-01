@@ -104,13 +104,23 @@ async function tctPutStoredSettings(settings){
   return clean;
 }
 
-// サイト一覧だけを storage へ同期する（ツールバーのON/OFF操作用）
+// 正本(疑似ブックマーク)から読み込んだ設定に、storage にだけ残っているサイトを統合する。
+// ブックマークへの書き込みが失敗・中断したとき、storage 側に残っている ON の記憶が
+// 次回起動時の読み込みで上書きされて消えないようにするための復元処理。
+// 正常時は両者が一致するため、差分は生じない。
+function tctMergeSitesWithStored(fromFolder, stored){
+  const a = Array.isArray(fromFolder && fromFolder.sites) ? fromFolder.sites : [];
+  const b = Array.isArray(stored && stored.sites) ? stored.sites : [];
+  const sites = [...new Set([...a, ...b])];
+  return Object.assign({}, fromFolder, { sites });
+}
+
+// サイト一覧だけを storage へ同期する（ツールバーのON/OFF操作用）。
+// 失敗は握りつぶさず呼び出し側へ伝える（無言で ON の記憶が失われるのを防ぐ）。
 async function tctSyncStoredSites(sites){
-  try{
-    const cur = await tctGetStoredSettings();
-    cur.sites = Array.isArray(sites) ? sites : [];
-    return await tctPutStoredSettings(cur);
-  }catch{ return null; }
+  const cur = await tctGetStoredSettings();
+  cur.sites = Array.isArray(sites) ? sites : [];
+  return await tctPutStoredSettings(cur);
 }
 
 async function tctReadFolder(folderId){
@@ -237,11 +247,16 @@ async function tctSyncContainer(containerId, payload){
     }
     seen.add(k.url);
   }
+  const failed = [];
   for(const site of payload.sites){
     if(seen.has(site)) continue;
     try{ await chrome.bookmarks.create({ parentId: containerId, title: site, url: site }); }
-    catch(e){ console.warn('TCT: failed to create site bookmark:', site, e); }
+    catch(e){ failed.push(site); console.warn('TCT: failed to create site bookmark:', site, e); }
   }
+  // 1件でも作成できなかったサイトがあれば例外を送出する。
+  // 握りつぶすと「ON したのに一覧へ入らない」原因のまま無言で失われるため、
+  // 呼び出し側(storage への保存)で復元できるように通知する。
+  if(failed.length) throw new Error('保存フォルダに書き込めませんでした: ' + failed.join(', '));
 }
 
 // 指定フォルダから当拡張機能の疑似ブックマーク（コンテナフォルダごと）を削除する。
@@ -285,8 +300,15 @@ async function tctSaveSettingsToBookmarks(settings){
   }
 
   const payload = tctSanitizeSettings(Object.assign({}, clean, { storageContainerId: containerId }));
-  await tctSyncContainer(containerId, payload);
-  return await tctPutStoredSettings(payload);
+  // 保存フォルダへの同期に失敗しても、storage へは必ず書き戻しておく。
+  // storage に残っていれば次回起動時に tctMergeSitesWithStored で復元できるため、
+  // ON の記憶が丸ごと失われることがなくなる。
+  let syncError = null;
+  try{ await tctSyncContainer(containerId, payload); }
+  catch(e){ syncError = e; }
+  const saved = await tctPutStoredSettings(payload);
+  if(syncError) throw syncError;
+  return saved;
 }
 
 // ブックマークフォルダの一覧（セレクトボックス用・ルートは除外）。
